@@ -1,0 +1,48 @@
+image: docker:latest
+services:
+  - docker:dind
+stages:
+  - sonar
+  - dockerise
+  - deploy
+sonarqube_test:
+  stage: sonar
+  image: godasisatish/sonar-scanner
+  script:
+    - sonar-scanner -Dsonar.projectKey=$project_key -Dsonar.sources=. -Dsonar.host.url=$sonar_url -Dsonar.login=$sonar_key
+  only:
+    - master
+
+
+dockerise mms_gui:
+  stage: dockerise
+  script:
+    - ls
+    - mkdir ../application
+    - ls
+    - mv -v $(ls -A | awk '{print $1}') ../application/
+    - ls ../application/
+    - mv ../application ./
+    - ls application/
+    - docker version
+    - echo -e "$Dockerfile" > Dockerfile
+    - chmod 777 Dockerfile
+    - docker build -t registry.gitlab.com/centerpoint/mms_gui/mms_gui:$stg_ver .
+    - docker login registry.gitlab.com -u $name -p $pass
+    - docker images
+    - docker push registry.gitlab.com/centerpoint/mms_gui/mms_gui:$stg_ver
+  only:
+    - STAGING_ENV
+CI_deploy:
+  stage: deploy
+  image: rastasheep/ubuntu-sshd
+  before_script:
+    - apt update
+    - echo -e "$key" > testing_env.pem
+    - chmod 400 testing_env.pem
+  script:
+    - ssh -i "testing_env.pem" -o StrictHostKeyChecking=no centos@$testip "hostname; sudo docker login registry.gitlab.com -u $name -p $pass;
+        sudo docker pull registry.gitlab.com/centerpoint/mms_gui/mms_gui:$stg_ver;  
+        sudo docker run --network vbts --name mmsgui -d -p 85:3000 -h mmsgui registry.gitlab.com/centerpoint/mms_gui/mms_gui:$stg_ver"
+  only:
+    - STAGING_ENV
